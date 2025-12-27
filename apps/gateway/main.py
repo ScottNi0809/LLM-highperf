@@ -26,12 +26,12 @@ INFER_TARGET = f"{INFER_HOST}:{INFER_PORT}"
 app = FastAPI(title="LLM HighPerf Gateway", version="0.1.0")
 
 
-# ---- 数据模型 ----
+# ---- 定义http请求体的数据模型 ----
 class GenerateRequestBody(BaseModel):
     prompt: str
     max_tokens: Optional[int] = 128
 
-
+# ---- 日志配置和健康检查代码 ----
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("gateway")
@@ -47,10 +47,14 @@ def health():
 @app.post("/generate")
 def generate(req: GenerateRequestBody):
     try:
-        # 建立 gRPC channel
+        # 与后端的 C++ gRPC 服务建立一个不安全的连接
         with grpc.insecure_channel(INFER_TARGET) as channel:
+            # 创建一个客户端存根 (Stub)，这是与服务器对话的入口
             stub = inference__pb2_grpc.InferenceServiceStub(channel)
             # 调用 gRPC 方法
+            # 调用存根的 Generate 方法，就像调用一个本地函数
+            # 使用 inference__pb2.GenerateRequest 创建请求数据
+            # 发送人：HTTP 请求的内容，接收方：后端C++服务器， 数据结构：proto
             resp = stub.Generate(
                 inference__pb2.GenerateRequest(
                     prompt=req.prompt,
@@ -65,6 +69,7 @@ def generate(req: GenerateRequestBody):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gateway error: {e}")
 
+    # 返回 gRPC 响应中的生成文本，以 JSON 格式返回给 HTTP 客户端
     return {"text": resp.text}
 
 
